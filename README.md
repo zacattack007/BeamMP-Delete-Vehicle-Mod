@@ -6,7 +6,7 @@ INSTALATION
 1. download the zip file
 2. extract the files and put whats in the server folder in the [your-server-name]/resources/server folder
 
-instructions
+COMMANDS
 
 /dv [player_id] to delete all of a specific players vehicles
 
