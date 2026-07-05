@@ -1,2 +1,2 @@
 # BeamMP-Delete-Vehicle-Mod
-lets you delete vehicles even though they arent yours
+lets you remove any vehicle in the server
