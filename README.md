@@ -1,5 +1,6 @@
 # BeamMP-Delete-Vehicle-Mod
-lets you remove any vehicle in the server whether it was yours or not
+lets you remove any vehicles that are placed in an annoying spot or you justwant to teach someone a lesson for being annoying.
+only works if your player_id is 0 in the server
 
 INSTALATION
 
