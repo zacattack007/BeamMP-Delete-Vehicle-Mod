@@ -72,5 +72,5 @@ end
 MP.RegisterEvent("onChatMessage", "OnChatHandler")
 
 print("--------------------------------------------------")
-print(" [SUCCESS] Corrected Indexing Script Active!       ")
+print(" SUCCESSFULY LOADED BEAMMP DELETE VEHICLE MOD       ")
 print("--------------------------------------------------")
