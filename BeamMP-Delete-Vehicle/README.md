@@ -13,7 +13,7 @@ Set `ALLOWED_USERNAME` at the top of `Server/Main.lua` to your exact BeamMP user
 
 **COMMANDS**
 
-`/help` shows this mod's commands and examples privately in chat. Anyone can view help; `/dv` remains restricted to the configured username.
+`/dvhelp` shows this mod's commands and examples privately in chat. Anyone can view help; `/dv` remains restricted to the configured username.
 
 `/dv <player_id|username> [vehicle_id]`
 

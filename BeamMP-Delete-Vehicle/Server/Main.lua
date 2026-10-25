@@ -37,7 +37,7 @@ function OnChatHandler(player_id, sender_name, message)
     local command, arguments = message:match("^(%S+)%s*(.-)%s*$")
     command = command:lower()
 
-    if command == "/help" then
+    if command == "/dvhelp" then
         MP.SendChatMessage(player_id, "BeamMP Delete Vehicle - Help")
         MP.SendChatMessage(player_id, "/dv list <player_id|username> - show vehicle IDs, models and available configurations.")
         MP.SendChatMessage(player_id, "/dv <player_id|username> <vehicle_id> - delete one vehicle.")
