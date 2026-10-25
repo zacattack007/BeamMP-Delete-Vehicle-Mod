@@ -206,6 +206,7 @@ function OnChatHandler(player_id, sender_name, message)
     if command == "/dvhelp" then
         MP.SendChatMessage(player_id, "BeamMP Delete Vehicle - Help")
         MP.SendChatMessage(player_id, "/dv list <player_id|username> - show vehicle IDs, models and available configurations.")
+        MP.SendChatMessage(player_id, "/dv locate <player_id|username> <vehicle_id> - mark a vehicle for 60 seconds. /dv locate clear - hide the marker.")
         MP.SendChatMessage(player_id, "/dv <player_id|username> <vehicle_id> - delete one vehicle.")
         MP.SendChatMessage(player_id, "/dv <player_id|username> - delete ALL vehicles belonging to that player.")
         MP.SendChatMessage(player_id, 'Examples: /dv list 2 | /dv list "Player Name" | /dv 2 0')
@@ -231,7 +232,7 @@ function OnChatHandler(player_id, sender_name, message)
         -- ==========================================
         -- COMMAND: Delete Vehicles (/dv)
         -- ==========================================
-        -- Reserve the unquoted word "list" as a read-only subcommand.
+        -- Reserve unquoted subcommands; quoted usernames remain valid targets.
         local first_argument, remaining = arguments:match("^(%S+)%s*(.*)$")
         if first_argument and first_argument:lower() == "set" then
             if not owner then
@@ -242,7 +243,13 @@ function OnChatHandler(player_id, sender_name, message)
             return 1
         end
         local list_only = first_argument ~= nil and first_argument:lower() == "list"
-        if list_only then
+        local locate_only = first_argument ~= nil and first_argument:lower() == "locate"
+        if locate_only and remaining:lower() == "clear" then
+            local sent = MP.TriggerClientEvent(player_id, "DVLocatorClear", "")
+            MP.SendChatMessage(player_id, sent and "Locator clear request sent." or "Error: Could not send locator clear request.")
+            return 1
+        end
+        if list_only or locate_only then
             arguments = remaining
         end
 
@@ -259,7 +266,8 @@ function OnChatHandler(player_id, sender_name, message)
         end
 
         if not target then
-            MP.SendChatMessage(player_id, 'Usage: /dv <player_id|username> [vehicle_id] or /dv list <player_id|username>. Use "quotes" for names with spaces.')
+            MP.SendChatMessage(player_id, locate_only and 'Usage: /dv locate <player_id|username> <vehicle_id> or /dv locate clear'
+                or 'Usage: /dv <player_id|username> [vehicle_id] or /dv list <player_id|username>. Use "quotes" for names with spaces.')
             return 1
         end
 
@@ -277,6 +285,10 @@ function OnChatHandler(player_id, sender_name, message)
                 MP.SendChatMessage(player_id, "Error: Vehicle ID must be a non-negative whole number.")
                 return 1
             end
+        end
+        if locate_only and specific_vehicle_id == nil then
+            MP.SendChatMessage(player_id, "Usage: /dv locate <player_id|username> <vehicle_id>. Find IDs with /dv list <player>.")
+            return 1
         end
 
         local players = MP.GetPlayers()
@@ -312,6 +324,25 @@ function OnChatHandler(player_id, sender_name, message)
             return 1
         end
 
+        if locate_only then
+            if not vehicles[specific_vehicle_id] then
+                MP.SendChatMessage(player_id, "Error: Vehicle ID " .. specific_vehicle_id .. " does not belong to " .. target_label)
+                return 1
+            end
+            local payload = {
+                serverVehicleID = target_id .. "-" .. specific_vehicle_id,
+                label = target_label .. " | Vehicle ID " .. specific_vehicle_id .. " | " .. vehicleDescription(vehicles[specific_vehicle_id]),
+                duration = 60
+            }
+            local sent = MP.TriggerClientEvent(player_id, "DVLocatorShow", Util.JsonEncode(payload))
+            if sent then
+                MP.SendChatMessage(player_id, "Locator requested for vehicle ID " .. specific_vehicle_id .. " owned by " .. target_label .. ". Requires the locator client ZIP; use /dv locate clear to stop.")
+            else
+                MP.SendChatMessage(player_id, "Error: Could not send the locator request. Try again after reconnecting.")
+            end
+            return 1
+        end
+
         if list_only then
             local vehicle_ids = {}
             for vehicle_id in pairs(vehicles) do
@@ -320,7 +351,7 @@ function OnChatHandler(player_id, sender_name, message)
             table.sort(vehicle_ids)
             MP.SendChatMessage(player_id, "Vehicles for " .. target_label .. ":")
             for _, vehicle_id in ipairs(vehicle_ids) do
-                MP.SendChatMessage(player_id, "Vehicle ID " .. vehicle_id .. " - " .. vehicleDescription(vehicles[vehicle_id]) .. " - delete with: /dv " .. target_id .. " " .. vehicle_id)
+                MP.SendChatMessage(player_id, "Vehicle ID " .. vehicle_id .. " - " .. vehicleDescription(vehicles[vehicle_id]) .. " - locate: /dv locate " .. target_id .. " " .. vehicle_id .. " - delete: /dv " .. target_id .. " " .. vehicle_id)
             end
             return 1
         end
