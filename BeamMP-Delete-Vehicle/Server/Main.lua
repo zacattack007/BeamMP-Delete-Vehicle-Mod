@@ -1,5 +1,171 @@
--- Set this to the BeamMP username allowed to use /dv. Empty disables access.
-local ALLOWED_USERNAME = "put your username here"
+-- Set the owner's BeamMP username. The owner manages permissions; empty disables /dv.
+local ALLOWED_USERNAME = ""
+-- Relative to the server's working directory, outside the hot-reloaded plugin folder.
+local PERMISSIONS_FILE = "BeamMP-Delete-Vehicle-permissions.json"
+
+local admins = {}
+local permissions_error
+
+local function loadPermissions()
+    if not FS.Exists(PERMISSIONS_FILE) then return end
+    local file, err = io.open(PERMISSIONS_FILE, "r")
+    if not file then permissions_error = err; return end
+    local contents = file:read("*a")
+    file:close()
+    local ok, data = pcall(Util.JsonDecode, contents or "")
+    if not ok or type(data) ~= "table" or data.version ~= 1
+        or (data.admins ~= nil and type(data.admins) ~= "table") then
+        permissions_error = "Invalid permissions file. Restore it or use /dv set reset."
+        return
+    end
+    for id, name in pairs(data.admins or {}) do
+        if type(id) ~= "string" or not id:match("^[1-9]%d*$")
+            or type(name) ~= "string" or name == "" then
+            permissions_error = "Invalid admin entry. Restore the file or use /dv set reset."
+            return
+        end
+    end
+    admins = data.admins or {}
+end
+
+local function savePermissions(updated)
+    local data = { version = 1 }
+    -- Omit an empty map: BeamMP's encoder may encode an empty Lua table as null.
+    if next(updated) then data.admins = updated end
+    local ok, encoded = pcall(Util.JsonEncode, data)
+    if not ok or type(encoded) ~= "string" then return false, "Could not encode permissions." end
+    local temporary = PERMISSIONS_FILE .. ".tmp"
+    local file, err = io.open(temporary, "w")
+    if not file then return false, err end
+    local written, write_error = file:write(encoded)
+    local closed, close_error = file:close()
+    if not written or not closed then return false, write_error or close_error end
+    -- Replace the saved file only after a complete write; commit memory only on success.
+    local renamed, rename_error = FS.Rename(temporary, PERMISSIONS_FILE)
+    if not renamed then return false, rename_error end
+    admins = updated
+    permissions_error = nil
+    return true
+end
+
+local function accountId(player_id)
+    if MP.IsPlayerGuest(player_id) then return nil end
+    local identifiers = MP.GetPlayerIdentifiers(player_id)
+    local id = type(identifiers) == "table" and identifiers.beammp
+    if type(id) == "number" and id > 0 and id < math.huge and id % 1 == 0 then
+        id = string.format("%.0f", id)
+    end
+    if type(id) == "string" and id:match("^[1-9]%d*$") then return id end
+end
+
+local function isOwner(player_id)
+    local username = MP.GetPlayerName(player_id)
+    return ALLOWED_USERNAME ~= "" and type(username) == "string"
+        and username:lower() == ALLOWED_USERNAME:lower() and not MP.IsPlayerGuest(player_id)
+end
+
+-- Permission commands can take multiple targets; quotes keep names with spaces together.
+local function permissionTargets(text)
+    local targets = {}
+    while text ~= "" do
+        local quoted = text:sub(1, 1) == '"'
+        local value, rest
+        if quoted then
+            value, rest = text:match('^"([^"]+)"(.*)$')
+            if not value or (rest ~= "" and not rest:match("^%s")) then return nil end
+        else
+            value, rest = text:match("^(%S+)(.*)$")
+            if not value then return nil end
+        end
+        table.insert(targets, { value = value, quoted = quoted })
+        text = rest:match("^%s*(.-)%s*$")
+    end
+    return targets
+end
+
+local function connectedTarget(target)
+    local players = MP.GetPlayers()
+    if not target.quoted and target.value:match("^%d+$") then
+        local id = tonumber(target.value)
+        if id and players[id] then return id, players[id] end
+        return nil, "Player ID " .. target.value .. " is not connected."
+    end
+    local found
+    for id, name in pairs(players) do
+        if name:lower() == target.value:lower() then
+            if found ~= nil then return nil, "Ambiguous username; use a player ID." end
+            found = id
+        end
+    end
+    if found ~= nil then return found, players[found] end
+    return nil, "No connected player named " .. target.value .. "."
+end
+
+local function managePermissions(player_id, arguments)
+    local action, rest = arguments:match("^(%S+)%s*(.-)%s*$")
+    action = action and action:lower()
+    local function reply(message) MP.SendChatMessage(player_id, message) end
+    local function commit(updated, message)
+        local ok, err = savePermissions(updated)
+        if ok then reply(message)
+        else reply("Error: Permissions were not changed: " .. tostring(err)) end
+    end
+
+    if action == "reset" and rest == "" then
+        commit({}, "Removed all added admins. The configured owner still has access.")
+        return
+    end
+    if permissions_error then
+        reply("Error: " .. permissions_error)
+        return
+    end
+    if action == "list" and rest == "" then
+        reply("Owner: " .. ALLOWED_USERNAME)
+        local ids = {}
+        for id in pairs(admins) do table.insert(ids, id) end
+        table.sort(ids)
+        if #ids == 0 then reply("No added admins.") end
+        for _, id in ipairs(ids) do
+            reply(admins[id] .. " (BeamMP account " .. id .. ") - remove: /dv set remove account:" .. id)
+        end
+        return
+    end
+    if (action ~= "add" and action ~= "remove") or rest == "" then
+        reply('Usage: /dv set add|remove <player_id|username> [...] or /dv set list|reset')
+        return
+    end
+    local targets = permissionTargets(rest)
+    if not targets or #targets == 0 then reply("Error: Invalid targets or unmatched quotes."); return end
+    local updated = {}
+    for id, name in pairs(admins) do updated[id] = name end
+    local changed = 0
+    for _, target in ipairs(targets) do
+        local id = not target.quoted and target.value:match("^account:([1-9]%d*)$")
+        local name
+        if id then
+            if action ~= "remove" then reply("Error: Add players by their connected username or player ID."); return end
+            name = updated[id]
+        else
+            local pid, result = connectedTarget(target)
+            if pid == nil then reply("Error: " .. result .. " No permissions were changed."); return end
+            name = result
+            if isOwner(pid) then reply("Error: The owner is configured in Main.lua and cannot be added or removed here."); return end
+            id = accountId(pid)
+            if not id then reply("Error: " .. name .. " needs a registered BeamMP account. No permissions were changed."); return end
+        end
+        if action == "add" then
+            if not updated[id] then changed = changed + 1 end
+            updated[id] = name
+        else
+            if updated[id] then changed = changed + 1 end
+            updated[id] = nil
+        end
+    end
+    commit(updated, (action == "add" and "Granted access to " or "Removed access from ") .. changed .. " player(s).")
+end
+
+loadPermissions()
+if permissions_error then print("[Delete Vehicle] " .. permissions_error) end
 
 -- Vehicle packets may have a network prefix before their JSON object.
 local function vehicleDescription(raw)
@@ -44,7 +210,9 @@ function OnChatHandler(player_id, sender_name, message)
         MP.SendChatMessage(player_id, "/dv <player_id|username> - delete ALL vehicles belonging to that player.")
         MP.SendChatMessage(player_id, 'Examples: /dv list 2 | /dv list "Player Name" | /dv 2 0')
         MP.SendChatMessage(player_id, 'Use the full username (case-insensitive), with "quotes" for spaces or numeric usernames.')
-        MP.SendChatMessage(player_id, "Player IDs are current server session IDs. Only the configured admin username can use /dv.")
+        MP.SendChatMessage(player_id, "Player IDs are current server session IDs. The owner and saved admins can use /dv.")
+        MP.SendChatMessage(player_id, "Owner only: /dv set add|remove <player_id|username> [...] | /dv set list | /dv set reset")
+        MP.SendChatMessage(player_id, 'Example: /dv set add 2 3 "Player Name". Reset removes all added admins, keeping the owner.')
         return 1
     end
 
@@ -53,10 +221,9 @@ function OnChatHandler(player_id, sender_name, message)
     -- ========================================================================
     if command == "/dv" then
         
-        -- Check the server-reported username, independent of the current player ID.
-        local username = MP.GetPlayerName(player_id)
-        if ALLOWED_USERNAME == "" or type(username) ~= "string"
-            or username:lower() ~= ALLOWED_USERNAME:lower() then
+        local owner = isOwner(player_id)
+        local id = not owner and accountId(player_id)
+        if ALLOWED_USERNAME == "" or (not owner and (permissions_error or not id or not admins[id])) then
             MP.SendChatMessage(player_id, "Error: You do not have admin privileges to use this command.")
             return 1 -- Intercepts the text to prevent standard players from spamming it
         end
@@ -66,6 +233,14 @@ function OnChatHandler(player_id, sender_name, message)
         -- ==========================================
         -- Reserve the unquoted word "list" as a read-only subcommand.
         local first_argument, remaining = arguments:match("^(%S+)%s*(.*)$")
+        if first_argument and first_argument:lower() == "set" then
+            if not owner then
+                MP.SendChatMessage(player_id, "Error: Only the configured owner can manage permissions.")
+            else
+                managePermissions(player_id, remaining)
+            end
+            return 1
+        end
         local list_only = first_argument ~= nil and first_argument:lower() == "list"
         if list_only then
             arguments = remaining

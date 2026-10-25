@@ -1,0 +1,3 @@
+# Server-specific permission data must not be included in public releases.
+BeamMP-Delete-Vehicle-permissions.json
+BeamMP-Delete-Vehicle-permissions.json.tmp
