@@ -37,6 +37,17 @@ function OnChatHandler(player_id, sender_name, message)
     local command, arguments = message:match("^(%S+)%s*(.-)%s*$")
     command = command:lower()
 
+    if command == "/help" then
+        MP.SendChatMessage(player_id, "BeamMP Delete Vehicle - Help")
+        MP.SendChatMessage(player_id, "/dv list <player_id|username> - show vehicle IDs, models and available configurations.")
+        MP.SendChatMessage(player_id, "/dv <player_id|username> <vehicle_id> - delete one vehicle.")
+        MP.SendChatMessage(player_id, "/dv <player_id|username> - delete ALL vehicles belonging to that player.")
+        MP.SendChatMessage(player_id, 'Examples: /dv list 2 | /dv list "Player Name" | /dv 2 0')
+        MP.SendChatMessage(player_id, 'Use the full username (case-insensitive), with "quotes" for spaces or numeric usernames.')
+        MP.SendChatMessage(player_id, "Player IDs are current server session IDs. Only the configured admin username can use /dv.")
+        return 1
+    end
+
     -- ========================================================================
     -- THE ADMIN PROTECTION BLOCK: Intercepts the monitored slash command
     -- ========================================================================

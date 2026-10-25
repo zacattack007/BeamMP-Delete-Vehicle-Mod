@@ -13,6 +13,8 @@ Set `ALLOWED_USERNAME` at the top of `Server/Main.lua` to your exact BeamMP user
 
 **COMMANDS**
 
+`/help` shows this mod's commands and examples privately in chat. Anyone can view help; `/dv` remains restricted to the configured username.
+
 `/dv <player_id|username> [vehicle_id]`
 
 - `/dv list Zacat` or `/dv list 2` lists that player's vehicle IDs in order, showing the internal model name, configuration filename when available, and a delete command for each. Listing does not delete anything.
