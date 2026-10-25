@@ -1,5 +1,5 @@
 -- Set this to the BeamMP username allowed to use /dv. Empty disables access.
-local ALLOWED_USERNAME = "zacattack"
+local ALLOWED_USERNAME = "put your username here"
 
 -- Vehicle packets may have a network prefix before their JSON object.
 local function vehicleDescription(raw)
