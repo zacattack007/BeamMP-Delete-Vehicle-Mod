@@ -1,6 +1,33 @@
 -- Set this to the BeamMP username allowed to use /dv. Empty disables access.
 local ALLOWED_USERNAME = "zacattack"
 
+-- Vehicle packets may have a network prefix before their JSON object.
+local function vehicleDescription(raw)
+    if type(raw) ~= "string" then return "Unknown model" end
+    local start = raw:find("{", 1, true)
+    if not start then return "Unknown model" end
+    local ok, data = pcall(Util.JsonDecode, raw:sub(start))
+    if not ok or type(data) ~= "table" then return "Unknown model" end
+
+    local function label(value)
+        if type(value) ~= "string" then return nil end
+        value = value:gsub("%c", " "):gsub("%^%d", ""):sub(1, 60)
+        if value == "" then return nil end
+        return value
+    end
+
+    -- jbm is the internal model name, which also works for mod vehicles.
+    local model = label(data.jbm) or "Unknown model"
+    local config = type(data.vcf) == "table" and data.vcf.partConfigFilename
+    if type(config) == "string" then
+        config = label(config:match("([^/\\]+)%.pc$"))
+    else
+        config = nil
+    end
+    if config then return model .. " (config: " .. config .. ")" end
+    return model
+end
+
 function OnChatHandler(player_id, sender_name, message)
     -- Safety check: If the message is completely empty or doesn't start with a slash, let it go to regular chat
     if not message or message:sub(1, 1) ~= "/" then 
@@ -26,6 +53,13 @@ function OnChatHandler(player_id, sender_name, message)
         -- ==========================================
         -- COMMAND: Delete Vehicles (/dv)
         -- ==========================================
+        -- Reserve the unquoted word "list" as a read-only subcommand.
+        local first_argument, remaining = arguments:match("^(%S+)%s*(.*)$")
+        local list_only = first_argument ~= nil and first_argument:lower() == "list"
+        if list_only then
+            arguments = remaining
+        end
+
         -- Quoted targets support spaces and distinguish numeric usernames from IDs.
         local target, vehicle_argument
         local quoted = arguments:sub(1, 1) == '"'
@@ -39,7 +73,12 @@ function OnChatHandler(player_id, sender_name, message)
         end
 
         if not target then
-            MP.SendChatMessage(player_id, 'Usage: /dv <player_id|username> [vehicle_id]. Use "quotes" for names with spaces.')
+            MP.SendChatMessage(player_id, 'Usage: /dv <player_id|username> [vehicle_id] or /dv list <player_id|username>. Use "quotes" for names with spaces.')
+            return 1
+        end
+
+        if list_only and vehicle_argument ~= "" then
+            MP.SendChatMessage(player_id, "Usage: /dv list <player_id|username>")
             return 1
         end
 
@@ -79,9 +118,24 @@ function OnChatHandler(player_id, sender_name, message)
             end
         end
 
+        local target_label = players[target_id] .. " (Player ID " .. target_id .. ")"
+
         local vehicles = MP.GetPlayerVehicles(target_id)
         if not vehicles or next(vehicles) == nil then
             MP.SendChatMessage(player_id, "Error: Player ID " .. target_id .. " has no active vehicles.")
+            return 1
+        end
+
+        if list_only then
+            local vehicle_ids = {}
+            for vehicle_id in pairs(vehicles) do
+                table.insert(vehicle_ids, vehicle_id)
+            end
+            table.sort(vehicle_ids)
+            MP.SendChatMessage(player_id, "Vehicles for " .. target_label .. ":")
+            for _, vehicle_id in ipairs(vehicle_ids) do
+                MP.SendChatMessage(player_id, "Vehicle ID " .. vehicle_id .. " - " .. vehicleDescription(vehicles[vehicle_id]) .. " - delete with: /dv " .. target_id .. " " .. vehicle_id)
+            end
             return 1
         end
 
@@ -89,7 +143,7 @@ function OnChatHandler(player_id, sender_name, message)
         if specific_vehicle_id then
             if vehicles[specific_vehicle_id] then
                 MP.RemoveVehicle(target_id, specific_vehicle_id)
-                MP.SendChatMessage(player_id, "Successfully deleted vehicle ID " .. specific_vehicle_id .. " from Player ID " .. target_id)
+                MP.SendChatMessage(player_id, "Successfully deleted vehicle ID " .. specific_vehicle_id .. " from " .. target_label)
             else
                 MP.SendChatMessage(player_id, "Error: Vehicle ID " .. specific_vehicle_id .. " does not belong to Player ID " .. target_id)
             end
@@ -100,7 +154,7 @@ function OnChatHandler(player_id, sender_name, message)
                 MP.RemoveVehicle(target_id, vehicle_id)
                 count = count + 1
             end
-            MP.SendChatMessage(player_id, "Successfully deleted " .. count .. " vehicle(s) from Player ID " .. target_id)
+            MP.SendChatMessage(player_id, "Successfully deleted " .. count .. " vehicle(s) from " .. target_label)
         end
         return 1 -- Clean intercept, completely strips command text from global chat windows
     end
