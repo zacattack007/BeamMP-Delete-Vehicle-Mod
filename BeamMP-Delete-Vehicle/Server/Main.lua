@@ -1,28 +1,24 @@
+-- Set this to the BeamMP username allowed to use /dv. Empty disables access.
+local ALLOWED_USERNAME = "zacattack"
+
 function OnChatHandler(player_id, sender_name, message)
     -- Safety check: If the message is completely empty or doesn't start with a slash, let it go to regular chat
     if not message or message:sub(1, 1) ~= "/" then 
         return 0 
     end
 
-    -- Split the string cleanly by spaces into a structured table array
-    local args = {}
-    for arg in message:gmatch("%S+") do
-        table.insert(args, arg)
-    end
-    
-    -- Safety exit if string parsing failed completely
-    if #args == 0 then return 1 end
-
-    -- DIRECT MATCHING: Target the explicit array slot for the command word to avoid table-to-string crashes
-    local command = args[1]:lower()
+    local command, arguments = message:match("^(%S+)%s*(.-)%s*$")
+    command = command:lower()
 
     -- ========================================================================
     -- THE ADMIN PROTECTION BLOCK: Intercepts the monitored slash command
     -- ========================================================================
     if command == "/dv" then
         
-        -- SECURE HOST LOCK: If the sender is NOT Player ID 0, reject the command immediately
-        if player_id ~= 0 then
+        -- Check the server-reported username, independent of the current player ID.
+        local username = MP.GetPlayerName(player_id)
+        if ALLOWED_USERNAME == "" or type(username) ~= "string"
+            or username:lower() ~= ALLOWED_USERNAME:lower() then
             MP.SendChatMessage(player_id, "Error: You do not have admin privileges to use this command.")
             return 1 -- Intercepts the text to prevent standard players from spamming it
         end
@@ -30,13 +26,57 @@ function OnChatHandler(player_id, sender_name, message)
         -- ==========================================
         -- COMMAND: Delete Vehicles (/dv)
         -- ==========================================
-        -- Explicitly parse individual numerical indexes safely out of the array
-        local target_id = tonumber(args[2])
-        local specific_vehicle_id = tonumber(args[3])
+        -- Quoted targets support spaces and distinguish numeric usernames from IDs.
+        local target, vehicle_argument
+        local quoted = arguments:sub(1, 1) == '"'
+        if quoted then
+            target, vehicle_argument = arguments:match('^"([^"]+)"%s*(.*)$')
+            if target and vehicle_argument ~= "" and not arguments:match('^"[^"]+"%s+') then
+                target = nil
+            end
+        else
+            target, vehicle_argument = arguments:match("^(%S+)%s*(.*)$")
+        end
 
-        if not target_id then
-            MP.SendChatMessage(player_id, "Usage: /dv [player_id] or /dv [player_id] [vehicle_id]")
+        if not target then
+            MP.SendChatMessage(player_id, 'Usage: /dv <player_id|username> [vehicle_id]. Use "quotes" for names with spaces.')
             return 1
+        end
+
+        -- An invalid vehicle argument must never fall back to deleting all vehicles.
+        local specific_vehicle_id
+        if vehicle_argument ~= "" then
+            specific_vehicle_id = tonumber(vehicle_argument)
+            if not vehicle_argument:match("^%d+$") or not specific_vehicle_id
+                or specific_vehicle_id == math.huge then
+                MP.SendChatMessage(player_id, "Error: Vehicle ID must be a non-negative whole number.")
+                return 1
+            end
+        end
+
+        local players = MP.GetPlayers()
+        local target_id
+        if not quoted and target:match("^%d+$") then
+            target_id = tonumber(target)
+            if not target_id or not players[target_id] then
+                MP.SendChatMessage(player_id, "Error: Player ID " .. target .. " is not connected.")
+                return 1
+            end
+        else
+            -- Exact, case-insensitive matching prevents deleting a partial-name match.
+            for id, name in pairs(players) do
+                if name:lower() == target:lower() then
+                    if target_id ~= nil then
+                        MP.SendChatMessage(player_id, "Error: Multiple players match that username. Use their player ID.")
+                        return 1
+                    end
+                    target_id = id
+                end
+            end
+            if target_id == nil then
+                MP.SendChatMessage(player_id, "Error: No connected player has the username " .. target .. ".")
+                return 1
+            end
         end
 
         local vehicles = MP.GetPlayerVehicles(target_id)
