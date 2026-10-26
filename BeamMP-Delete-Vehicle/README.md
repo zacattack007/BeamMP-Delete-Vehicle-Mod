@@ -1,14 +1,30 @@
 # BeamMP Delete Vehicle Mod
 
-A BeamMP mod for finding and deleting players' vehicles, with a small client extension for visual location markers. The server owner can grant access to multiple admins and manage those permissions in chat.
+A BeamMP mod for finding and deleting players' vehicles, with an in-game Delete Vehicle UI app and visual location markers. The server owner can grant access to multiple admins through the app or chat.
 
 ## Installation
 
 1. Use BeamMP Server 3.1.0 or newer.
 2. Create `Resources/Server/BeamMP-Delete-Vehicle` inside your server folder.
-3. Copy `Server/Main.lua` from this download into that folder.
-4. Copy `Client/BeamMP-Delete-Vehicle-Locator.zip` into `Resources/Client` without extracting it. For this mod, install the ZIP only; leave `ClientSource` out of `Resources/Client`. Other mods can stay in place. BeamMP downloads it to players when they join.
+3. For a source download, copy `BeamMP-Delete-Vehicle/Server/Main.lua` into that folder. The ready-to-install release ZIP already contains the correct `Resources` layout; merge its `Resources` folder into your server folder.
+4. For a source download, copy `BeamMP-Delete-Vehicle/Client/BeamMP-Delete-Vehicle-Locator.zip` into `Resources/Client` without extracting it. For this mod, install the ZIP only; leave `ClientSource` out of `Resources/Client`. Other mods can stay in place. BeamMP downloads it to players when they join.
 5. Configure the owner username below, then start or restart the server. Reconnect after installing or updating the client ZIP.
+
+## In-game UI app
+
+Update **both** the server script and client ZIP, restart the server, and reconnect. In BeamNG's **UI Apps** editor, choose **Add App → Delete Vehicle**, then save the layout. The existing locator ZIP now contains both the locator and the UI app.
+
+- Choose a player by username and player ID. Their spawned vehicles show model/configuration and vehicle ID.
+- Use **Locate vehicle** to identify the vehicle in the world, then **Delete…**. Check the displayed owner and vehicle before confirming deletion.
+- The owner's **Permissions** tab can grant access to connected registered players, remove saved admins (including offline accounts), and reset all added admins. Removal and reset ask for confirmation.
+- Lists refresh automatically every five seconds; the refresh button updates them immediately. If a player reconnects or a vehicle changes, stale selections are rejected and must be selected again.
+- The app shows connection and access status. Vehicle management remains protected by server-side permission checks. Existing chat commands still work.
+
+The public release has no owner configured. Keep your configured username when updating a private installation, or set it as described below. Added admins see vehicle controls; only the owner receives permission-management data.
+
+### Quick UI test
+
+Join your test server as the configured owner, spawn two different vehicles, and add the app. Select yourself, locate each vehicle, and check that **Keep unchanged** cancels deletion. Confirm deletion of one vehicle and verify that only that vehicle disappears. Test granting and revoking another registered player's access when a second player is available.
 
 ## Owner configuration
 
@@ -82,4 +98,15 @@ The marker stops after 60 seconds, when cleared, when the target is removed/repl
 
 ### Rebuilding the client ZIP
 
-Editable client Lua files are in `ClientSource`. From the repository root, run `python tools/build_client.py` after changing them, then install the rebuilt `Client/BeamMP-Delete-Vehicle-Locator.zip` and reconnect. Do not install the source folder directly in `Resources/Client`.
+Editable client Lua and UI assets are in `BeamMP-Delete-Vehicle/ClientSource`. From the repository root, run `python tools/build_client.py` after changing them, then install the rebuilt `Client/BeamMP-Delete-Vehicle-Locator.zip` and reconnect. Do not install the source folder directly in `Resources/Client`.
+## Automated checks
+
+From the repository root, install Python's `lupa` package, then run:
+
+```sh
+python -m pip install lupa
+python tests/test_ui_server.py
+python tests/test_client.py
+```
+
+These run server permission/UI regressions and client bridge/locator checks with mocked game APIs, and verify that the client ZIP matches its source. They do not replace testing inside BeamNG and BeamMP.

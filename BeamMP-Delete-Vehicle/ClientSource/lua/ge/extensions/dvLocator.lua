@@ -3,8 +3,26 @@ local target
 local registeredWith
 local handlerName = "beammpDeleteVehicleLocator"
 
+local uiListening = false
+local function uiHook(event, data)
+    if guihooks then guihooks.trigger(event, data) end
+end
+local function receiveState(raw)
+    if type(raw) ~= "string" then return end
+    local ok, data = pcall(jsonDecode, raw)
+    if ok and type(data) == "table" then uiHook("DVAppState", data) end
+end
+local function receiveNotice(raw)
+    if type(raw) ~= "string" or #raw > 4096 then return end
+    local ok, data = pcall(jsonDecode, raw)
+    if ok and type(data) == "table" and type(data.text) == "string" then
+        uiHook("DVAppNotice", {text = data.text})
+    end
+end
+
 local function notify(text)
     if ui_message then ui_message(text, 6, "dvLocator") end
+    uiHook("DVAppNotice", {text = text})
 end
 
 local function clear(reason)
@@ -35,8 +53,30 @@ local function registerHandlers()
     if type(AddEventHandler) == "function" and registeredWith ~= AddEventHandler then
         AddEventHandler("DVLocatorShow", receiveShow, handlerName)
         AddEventHandler("DVLocatorClear", receiveClear, handlerName)
+        AddEventHandler("DVUIState", receiveState, handlerName)
+        AddEventHandler("DVUINotice", receiveNotice, handlerName)
         registeredWith = AddEventHandler
     end
+end
+
+local function uiAction(action, value)
+    local actions = {refresh = true, delete = true, locate = true, clear = true, grant = true,
+        remove = true, reset = true, unsubscribe = true}
+    if not actions[action] then return end
+    if action == "refresh" and value ~= nil then
+        if type(value) ~= "number" or value < 0 or value > 2147483647 or value % 1 ~= 0 then return end
+    elseif action == "delete" or action == "locate" or action == "grant" then
+        if type(value) ~= "string" or #value > 32 or not value:match("^t%d+$") then return end
+    elseif action == "remove" then
+        if type(value) ~= "string" or #value > 32 or not value:match("^[1-9]%d*$") then return end
+    end
+    if not MPCoreNetwork or not MPCoreNetwork.isMPSession() or type(TriggerServerEvent) ~= "function" then
+        uiHook("DVAppState", {connected = false})
+        return
+    end
+    uiListening = action ~= "unsubscribe"
+    registerHandlers()
+    TriggerServerEvent("DVUIAction", jsonEncode({action = action, value = value}))
 end
 
 local function onUpdate(dtReal)
@@ -76,15 +116,23 @@ end
 
 local function onExtensionUnloaded()
     clear()
+    if uiListening and type(TriggerServerEvent) == "function" and MPCoreNetwork and MPCoreNetwork.isMPSession() then
+        TriggerServerEvent("DVUIAction", jsonEncode({action = "unsubscribe"}))
+    end
+    uiListening = false
     if registeredWith and type(RemoveEventHandler) == "function" then
         RemoveEventHandler("DVLocatorShow", handlerName)
         RemoveEventHandler("DVLocatorClear", handlerName)
+        RemoveEventHandler("DVUIState", handlerName)
+        RemoveEventHandler("DVUINotice", handlerName)
     end
     registeredWith = nil
+    uiHook("DVAppState", {connected = false})
 end
 
 M.onExtensionLoaded = registerHandlers
 M.onUpdate = onUpdate
-M.onClientEndMission = function() clear() end
+M.onClientEndMission = function() clear(); uiHook("DVAppState", {connected = false}) end
 M.onExtensionUnloaded = onExtensionUnloaded
+M.uiAction = uiAction
 return M

@@ -1,0 +1,40 @@
+<section class="dv-app" aria-label="Delete Vehicle management">
+  <link rel="stylesheet" href="/ui/modules/apps/DeleteVehicle/app.css">
+  <header class="dv-header"><div class="dv-brand-icon" aria-hidden="true">⊖</div><div><div class="dv-eyebrow">BEAMMP / VEHICLE MANAGEMENT</div><h1>Delete Vehicle</h1></div><button class="dv-refresh" ng-click="act('refresh', selectedId)" ng-disabled="busy" title="Refresh players and vehicles" aria-label="Refresh players and vehicles">↻</button></header>
+  <div class="dv-status"><span class="dv-dot" ng-class="{'dv-live': state.connected && state.allowed}"></span>{{connection}}<span class="dv-count" ng-if="state.allowed">{{state.players.length}} players</span></div>
+  <nav class="dv-tabs" ng-if="state.allowed"><button ng-class="{active: tab === 'vehicles'}" ng-click="setTab('vehicles')">Vehicles</button><button ng-if="state.owner" ng-class="{active: tab === 'permissions'}" ng-click="setTab('permissions')">Permissions</button></nav>
+  <div class="dv-scroll">
+    <div class="dv-notice" ng-if="notice" role="status" aria-live="polite">{{notice}}</div>
+    <div class="dv-offline" ng-if="!state.connected">Join a server running the updated Delete Vehicle mod. Update both the server script and client ZIP if this stays offline.</div>
+    <div class="dv-empty" ng-if="state.connected && !state.allowed"><h2>{{state.configured ? 'Admin access required' : 'Owner setup needed'}}</h2><p>{{state.configured ? 'Ask the server owner to add you to the permissions list.' : 'The server owner must set ALLOWED_USERNAME in Main.lua before this app can be used.'}}</p></div>
+
+    <section class="dv-confirm" ng-if="confirmation" role="alertdialog" aria-label="Confirm action">
+      <div class="dv-eyebrow">CONFIRM ACTION</div><h2>{{confirmation.title}}</h2><p class="dv-confirm-target">{{confirmation.detail}}</p><p>{{confirmation.explanation}}</p><div class="dv-actions"><button class="dv-button dv-outline" ng-click="dismiss()">Keep unchanged</button><button class="dv-button dv-danger" ng-click="confirm()" ng-disabled="!canUse()">{{confirmation.button}}</button></div>
+    </section>
+
+    <div ng-if="state.allowed && tab === 'vehicles'">
+      <label class="dv-eyebrow" for="dv-player">SELECT PLAYER</label>
+      <select id="dv-player" class="dv-select" ng-model="selectedId" ng-options="p.id as (p.name + ' · ID ' + p.id + ' · ' + p.count + ' vehicles') for p in state.players" ng-change="changePlayer(selectedId)" ng-disabled="busy || !state.connected"></select>
+      <div class="dv-section-heading"><h2>Spawned vehicles</h2><button class="dv-text-button" ng-click="act('clear')" ng-disabled="!canUse()">Clear locator</button></div>
+      <div class="dv-empty" ng-if="!state.vehicles.length"><div class="dv-empty-symbol">○</div><strong>No vehicles spawned</strong><p>Choose another player or refresh the list.</p></div>
+      <article class="dv-vehicle" ng-repeat="vehicle in state.vehicles track by vehicle.token">
+        <div class="dv-card-top"><span class="dv-eyebrow">VEHICLE {{vehicle.id}}</span><span class="dv-job-id">{{state.selectedId}}-{{vehicle.id}}</span></div>
+        <h2>{{vehicle.description}}</h2><div class="dv-actions"><button class="dv-button dv-locate" ng-click="act('locate', vehicle.token)" ng-disabled="!canUse()">Locate vehicle</button><button class="dv-button dv-delete" ng-click="askDelete(vehicle)" ng-disabled="!canUse()">Delete…</button></div>
+      </article>
+      <p class="dv-hint">Locate first to identify the vehicle in-game. Deletion asks you to confirm the exact target.</p>
+    </div>
+
+    <div ng-if="state.allowed && state.owner && tab === 'permissions'">
+      <div class="dv-owner"><div class="dv-eyebrow">CONFIGURED OWNER</div><strong>{{state.ownerName}}</strong></div>
+      <div class="dv-offline" ng-if="state.permissionsError">{{state.permissionsError}}</div>
+      <div class="dv-section-heading"><h2>Connected players</h2><span>GRANT ACCESS</span></div>
+      <article class="dv-person" ng-repeat="player in state.players track by player.id"><div class="dv-person-info"><strong>{{player.name}}</strong><div class="dv-meta">Player {{player.id}} · {{player.role}}</div></div><button class="dv-button dv-small" ng-if="player.canGrant" ng-click="act('grant', player.token)" ng-disabled="!canUse()">Make admin</button></article>
+      <div class="dv-section-heading"><h2>Saved admins</h2><span>{{state.admins.length}} ACCOUNTS</span></div>
+      <div class="dv-empty" ng-if="!state.admins.length">No added admins.</div>
+      <article class="dv-person" ng-repeat="admin in state.admins track by admin.account"><div class="dv-person-info"><strong>{{admin.name}}</strong><div class="dv-meta">Account {{admin.account}}</div></div><button class="dv-button dv-delete dv-small" ng-click="askRemove(admin)" ng-disabled="!canUse()">Remove…</button></article>
+      <button class="dv-button dv-reset" ng-click="askReset()" ng-disabled="!canUse()">Reset added admins…</button>
+      <p class="dv-hint">Saved permissions follow BeamMP accounts after reconnects. The owner keeps access after a reset.</p>
+    </div>
+  </div>
+  <footer class="dv-footer">Select. Locate. Confirm.<span>/dvhelp</span></footer>
+</section>

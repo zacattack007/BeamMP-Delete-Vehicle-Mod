@@ -1,0 +1,12 @@
+{
+  "name": "Delete Vehicle",
+  "author": "BeamMP Delete Vehicle Mod",
+  "version": "0.3",
+  "description": "Find, locate, and delete BeamMP vehicles. Owners can manage saved admins.",
+  "directive": "deleteVehicle",
+  "domElement": "<delete-vehicle></delete-vehicle>",
+  "types": ["ui.apps.categories.utility"],
+  "category": "Gameplay",
+  "interactive": "required",
+  "css": {"width": "400px", "height": "620px", "min-width": "320px", "min-height": "360px", "top": "100px", "right": "30px"}
+}

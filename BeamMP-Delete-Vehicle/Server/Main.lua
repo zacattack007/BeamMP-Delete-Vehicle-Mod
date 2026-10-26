@@ -6,6 +6,14 @@ local PERMISSIONS_FILE = "BeamMP-Delete-Vehicle-permissions.json"
 local admins = {}
 local permissions_error
 
+local uiSubscribers, uiSelected, uiSnapshots, uiRate = {}, {}, {}, {}
+local playerEpoch, vehicleEpoch = {}, {}
+local nextUIToken = 0
+local function sendChat(pid, message)
+    MP.SendChatMessage(pid, message)
+    if uiSubscribers[pid] then MP.TriggerClientEvent(pid, "DVUINotice", Util.JsonEncode({text = message})) end
+end
+
 local function loadPermissions()
     if not FS.Exists(PERMISSIONS_FILE) then return end
     local file, err = io.open(PERMISSIONS_FILE, "r")
@@ -104,7 +112,7 @@ end
 local function managePermissions(player_id, arguments)
     local action, rest = arguments:match("^(%S+)%s*(.-)%s*$")
     action = action and action:lower()
-    local function reply(message) MP.SendChatMessage(player_id, message) end
+    local function reply(message) sendChat(player_id, message) end
     local function commit(updated, message)
         local ok, err = savePermissions(updated)
         if ok then reply(message)
@@ -194,7 +202,7 @@ local function vehicleDescription(raw)
     return model
 end
 
-function OnChatHandler(player_id, sender_name, message)
+local function handleChat(player_id, sender_name, message)
     -- Safety check: If the message is completely empty or doesn't start with a slash, let it go to regular chat
     if not message or message:sub(1, 1) ~= "/" then 
         return 0 
@@ -204,16 +212,16 @@ function OnChatHandler(player_id, sender_name, message)
     command = command:lower()
 
     if command == "/dvhelp" then
-        MP.SendChatMessage(player_id, "BeamMP Delete Vehicle - Help")
-        MP.SendChatMessage(player_id, "/dv list <player_id|username> - show vehicle IDs, models and available configurations.")
-        MP.SendChatMessage(player_id, "/dv locate <player_id|username> <vehicle_id> - mark a vehicle for 60 seconds. /dv locate clear - hide the marker.")
-        MP.SendChatMessage(player_id, "/dv <player_id|username> <vehicle_id> - delete one vehicle.")
-        MP.SendChatMessage(player_id, "/dv <player_id|username> - delete ALL vehicles belonging to that player.")
-        MP.SendChatMessage(player_id, 'Examples: /dv list 2 | /dv list "Player Name" | /dv 2 0')
-        MP.SendChatMessage(player_id, 'Use the full username (case-insensitive), with "quotes" for spaces or numeric usernames.')
-        MP.SendChatMessage(player_id, "Player IDs are current server session IDs. The owner and saved admins can use /dv.")
-        MP.SendChatMessage(player_id, "Owner only: /dv set add|remove <player_id|username> [...] | /dv set list | /dv set reset")
-        MP.SendChatMessage(player_id, 'Example: /dv set add 2 3 "Player Name". Reset removes all added admins, keeping the owner.')
+        sendChat(player_id, "BeamMP Delete Vehicle - Help")
+        sendChat(player_id, "/dv list <player_id|username> - show vehicle IDs, models and available configurations.")
+        sendChat(player_id, "/dv locate <player_id|username> <vehicle_id> - mark a vehicle for 60 seconds. /dv locate clear - hide the marker.")
+        sendChat(player_id, "/dv <player_id|username> <vehicle_id> - delete one vehicle.")
+        sendChat(player_id, "/dv <player_id|username> - delete ALL vehicles belonging to that player.")
+        sendChat(player_id, 'Examples: /dv list 2 | /dv list "Player Name" | /dv 2 0')
+        sendChat(player_id, 'Use the full username (case-insensitive), with "quotes" for spaces or numeric usernames.')
+        sendChat(player_id, "Player IDs are current server session IDs. The owner and saved admins can use /dv.")
+        sendChat(player_id, "Owner only: /dv set add|remove <player_id|username> [...] | /dv set list | /dv set reset")
+        sendChat(player_id, 'Example: /dv set add 2 3 "Player Name". Reset removes all added admins, keeping the owner.')
         return 1
     end
 
@@ -225,7 +233,7 @@ function OnChatHandler(player_id, sender_name, message)
         local owner = isOwner(player_id)
         local id = not owner and accountId(player_id)
         if ALLOWED_USERNAME == "" or (not owner and (permissions_error or not id or not admins[id])) then
-            MP.SendChatMessage(player_id, "Error: You do not have admin privileges to use this command.")
+            sendChat(player_id, "Error: You do not have admin privileges to use this command.")
             return 1 -- Intercepts the text to prevent standard players from spamming it
         end
 
@@ -236,7 +244,7 @@ function OnChatHandler(player_id, sender_name, message)
         local first_argument, remaining = arguments:match("^(%S+)%s*(.*)$")
         if first_argument and first_argument:lower() == "set" then
             if not owner then
-                MP.SendChatMessage(player_id, "Error: Only the configured owner can manage permissions.")
+                sendChat(player_id, "Error: Only the configured owner can manage permissions.")
             else
                 managePermissions(player_id, remaining)
             end
@@ -246,7 +254,7 @@ function OnChatHandler(player_id, sender_name, message)
         local locate_only = first_argument ~= nil and first_argument:lower() == "locate"
         if locate_only and remaining:lower() == "clear" then
             local sent = MP.TriggerClientEvent(player_id, "DVLocatorClear", "")
-            MP.SendChatMessage(player_id, sent and "Locator clear request sent." or "Error: Could not send locator clear request.")
+            sendChat(player_id, sent and "Locator clear request sent." or "Error: Could not send locator clear request.")
             return 1
         end
         if list_only or locate_only then
@@ -266,13 +274,13 @@ function OnChatHandler(player_id, sender_name, message)
         end
 
         if not target then
-            MP.SendChatMessage(player_id, locate_only and 'Usage: /dv locate <player_id|username> <vehicle_id> or /dv locate clear'
+            sendChat(player_id, locate_only and 'Usage: /dv locate <player_id|username> <vehicle_id> or /dv locate clear'
                 or 'Usage: /dv <player_id|username> [vehicle_id] or /dv list <player_id|username>. Use "quotes" for names with spaces.')
             return 1
         end
 
         if list_only and vehicle_argument ~= "" then
-            MP.SendChatMessage(player_id, "Usage: /dv list <player_id|username>")
+            sendChat(player_id, "Usage: /dv list <player_id|username>")
             return 1
         end
 
@@ -282,12 +290,12 @@ function OnChatHandler(player_id, sender_name, message)
             specific_vehicle_id = tonumber(vehicle_argument)
             if not vehicle_argument:match("^%d+$") or not specific_vehicle_id
                 or specific_vehicle_id == math.huge then
-                MP.SendChatMessage(player_id, "Error: Vehicle ID must be a non-negative whole number.")
+                sendChat(player_id, "Error: Vehicle ID must be a non-negative whole number.")
                 return 1
             end
         end
         if locate_only and specific_vehicle_id == nil then
-            MP.SendChatMessage(player_id, "Usage: /dv locate <player_id|username> <vehicle_id>. Find IDs with /dv list <player>.")
+            sendChat(player_id, "Usage: /dv locate <player_id|username> <vehicle_id>. Find IDs with /dv list <player>.")
             return 1
         end
 
@@ -296,7 +304,7 @@ function OnChatHandler(player_id, sender_name, message)
         if not quoted and target:match("^%d+$") then
             target_id = tonumber(target)
             if not target_id or not players[target_id] then
-                MP.SendChatMessage(player_id, "Error: Player ID " .. target .. " is not connected.")
+                sendChat(player_id, "Error: Player ID " .. target .. " is not connected.")
                 return 1
             end
         else
@@ -304,14 +312,14 @@ function OnChatHandler(player_id, sender_name, message)
             for id, name in pairs(players) do
                 if name:lower() == target:lower() then
                     if target_id ~= nil then
-                        MP.SendChatMessage(player_id, "Error: Multiple players match that username. Use their player ID.")
+                        sendChat(player_id, "Error: Multiple players match that username. Use their player ID.")
                         return 1
                     end
                     target_id = id
                 end
             end
             if target_id == nil then
-                MP.SendChatMessage(player_id, "Error: No connected player has the username " .. target .. ".")
+                sendChat(player_id, "Error: No connected player has the username " .. target .. ".")
                 return 1
             end
         end
@@ -320,13 +328,13 @@ function OnChatHandler(player_id, sender_name, message)
 
         local vehicles = MP.GetPlayerVehicles(target_id)
         if not vehicles or next(vehicles) == nil then
-            MP.SendChatMessage(player_id, "Error: Player ID " .. target_id .. " has no active vehicles.")
+            sendChat(player_id, "Error: Player ID " .. target_id .. " has no active vehicles.")
             return 1
         end
 
         if locate_only then
             if not vehicles[specific_vehicle_id] then
-                MP.SendChatMessage(player_id, "Error: Vehicle ID " .. specific_vehicle_id .. " does not belong to " .. target_label)
+                sendChat(player_id, "Error: Vehicle ID " .. specific_vehicle_id .. " does not belong to " .. target_label)
                 return 1
             end
             local payload = {
@@ -336,9 +344,9 @@ function OnChatHandler(player_id, sender_name, message)
             }
             local sent = MP.TriggerClientEvent(player_id, "DVLocatorShow", Util.JsonEncode(payload))
             if sent then
-                MP.SendChatMessage(player_id, "Locator requested for vehicle ID " .. specific_vehicle_id .. " owned by " .. target_label .. ". Requires the locator client ZIP; use /dv locate clear to stop.")
+                sendChat(player_id, "Locator requested for vehicle ID " .. specific_vehicle_id .. " owned by " .. target_label .. ". Requires the locator client ZIP; use /dv locate clear to stop.")
             else
-                MP.SendChatMessage(player_id, "Error: Could not send the locator request. Try again after reconnecting.")
+                sendChat(player_id, "Error: Could not send the locator request. Try again after reconnecting.")
             end
             return 1
         end
@@ -349,9 +357,9 @@ function OnChatHandler(player_id, sender_name, message)
                 table.insert(vehicle_ids, vehicle_id)
             end
             table.sort(vehicle_ids)
-            MP.SendChatMessage(player_id, "Vehicles for " .. target_label .. ":")
+            sendChat(player_id, "Vehicles for " .. target_label .. ":")
             for _, vehicle_id in ipairs(vehicle_ids) do
-                MP.SendChatMessage(player_id, "Vehicle ID " .. vehicle_id .. " - " .. vehicleDescription(vehicles[vehicle_id]) .. " - locate: /dv locate " .. target_id .. " " .. vehicle_id .. " - delete: /dv " .. target_id .. " " .. vehicle_id)
+                sendChat(player_id, "Vehicle ID " .. vehicle_id .. " - " .. vehicleDescription(vehicles[vehicle_id]) .. " - locate: /dv locate " .. target_id .. " " .. vehicle_id .. " - delete: /dv " .. target_id .. " " .. vehicle_id)
             end
             return 1
         end
@@ -360,9 +368,9 @@ function OnChatHandler(player_id, sender_name, message)
         if specific_vehicle_id then
             if vehicles[specific_vehicle_id] then
                 MP.RemoveVehicle(target_id, specific_vehicle_id)
-                MP.SendChatMessage(player_id, "Successfully deleted vehicle ID " .. specific_vehicle_id .. " from " .. target_label)
+                sendChat(player_id, "Successfully deleted vehicle ID " .. specific_vehicle_id .. " from " .. target_label)
             else
-                MP.SendChatMessage(player_id, "Error: Vehicle ID " .. specific_vehicle_id .. " does not belong to Player ID " .. target_id)
+                sendChat(player_id, "Error: Vehicle ID " .. specific_vehicle_id .. " does not belong to Player ID " .. target_id)
             end
         -- Choice 2: Delete ALL vehicles if no vehicle ID was specified
         else
@@ -371,7 +379,7 @@ function OnChatHandler(player_id, sender_name, message)
                 MP.RemoveVehicle(target_id, vehicle_id)
                 count = count + 1
             end
-            MP.SendChatMessage(player_id, "Successfully deleted " .. count .. " vehicle(s) from " .. target_label)
+            sendChat(player_id, "Successfully deleted " .. count .. " vehicle(s) from " .. target_label)
         end
         return 1 -- Clean intercept, completely strips command text from global chat windows
     end
@@ -380,7 +388,161 @@ function OnChatHandler(player_id, sender_name, message)
     return 0 
 end
 
+local function uiAccess(pid)
+    local owner = isOwner(pid)
+    local account = not owner and accountId(pid)
+    return ALLOWED_USERNAME ~= "" and (owner or (not permissions_error and account and admins[account] ~= nil)), owner
+end
+
+local function sendUIState(pid)
+    local allowed, owner = uiAccess(pid)
+    if not allowed then
+        uiSnapshots[pid] = nil
+        MP.TriggerClientEvent(pid, "DVUIState", Util.JsonEncode({connected = true, allowed = false,
+            configured = ALLOWED_USERNAME ~= ""}))
+        return
+    end
+    local previous, snapshots = uiSnapshots[pid] or {}, {}
+    local function tokenFor(key, snapshot)
+        local old = previous[key]
+        if old and old.identity == snapshot.identity and old.epoch == snapshot.epoch and old.raw == snapshot.raw then
+            snapshot.token = old.token
+        else nextUIToken = nextUIToken + 1; snapshot.token = "t" .. nextUIToken end
+        snapshots[key] = snapshot
+        return snapshot.token
+    end
+    local players, vehicles, permissions = {}, {}, {}
+    local online = MP.GetPlayers()
+    if not uiSelected[pid] or not online[uiSelected[pid]] then
+        uiSelected[pid] = online[pid] and pid or nil
+    end
+    for id, username in pairs(online) do
+        local account = accountId(id)
+        local identity = username .. ":" .. (account or "guest") .. ":" .. (playerEpoch[id] or 0)
+        local listed = MP.GetPlayerVehicles(id) or {}
+        local count = 0
+        for _ in pairs(listed) do count = count + 1 end
+        local playerToken = tokenFor("p:" .. id, {kind = "player", pid = id, identity = identity})
+        local targetOwner = isOwner(id)
+        table.insert(players, {id = id, name = username, count = count, token = playerToken,
+            role = targetOwner and "Owner" or (account and admins[account] and "Admin" or "Player"),
+            canGrant = owner and account ~= nil and not targetOwner and admins[account] == nil})
+        if id == uiSelected[pid] then
+            for vid, raw in pairs(listed) do
+                local key = id .. ":" .. vid
+                local token = tokenFor(key, {kind = "vehicle", pid = id, vid = vid, identity = identity,
+                    raw = raw, epoch = vehicleEpoch[key] or 0})
+                table.insert(vehicles, {id = vid, description = vehicleDescription(raw), token = token})
+            end
+        end
+    end
+    table.sort(players, function(a, b) return a.id < b.id end)
+    table.sort(vehicles, function(a, b) return a.id < b.id end)
+    if owner then
+        for account, username in pairs(admins) do table.insert(permissions, {account = account, name = username}) end
+        table.sort(permissions, function(a, b) return a.name:lower() < b.name:lower() end)
+    end
+    uiSnapshots[pid] = snapshots
+    MP.TriggerClientEvent(pid, "DVUIState", Util.JsonEncode({connected = true, allowed = true, owner = owner,
+        configured = true, players = players, selectedId = uiSelected[pid], vehicles = vehicles,
+        admins = owner and permissions or nil, ownerName = owner and ALLOWED_USERNAME or nil,
+        permissionsError = owner and permissions_error or nil}))
+end
+
+local function publishUI()
+    if next(uiSubscribers) == nil then return end
+    local players = MP.GetPlayers()
+    for pid in pairs(uiSubscribers) do
+        if players[pid] then sendUIState(pid) else uiSubscribers[pid], uiSnapshots[pid] = nil, nil end
+    end
+end
+
+function OnChatHandler(pid, sender, message)
+    local result = handleChat(pid, sender, message)
+    if result == 1 then publishUI() end
+    return result
+end
+
+local function validUIInteger(value)
+    return type(value) == "number" and value >= 0 and value <= 2147483647 and value % 1 == 0
+end
+
+function DVUIAction(pid, raw)
+    if MP.GetPlayers()[pid] == nil or type(raw) ~= "string" or #raw > 512 then return end
+    local ok, data = pcall(Util.JsonDecode, raw)
+    if not ok or type(data) ~= "table" then return end
+    local actions = {refresh = true, delete = true, locate = true, clear = true, grant = true,
+        remove = true, reset = true, unsubscribe = true}
+    if not actions[data.action] then return end
+    if data.action == "unsubscribe" then
+        uiSubscribers[pid], uiSnapshots[pid], uiSelected[pid], uiRate[pid] = nil, nil, nil, nil
+        return
+    end
+    local now = os.time()
+    if not uiRate[pid] or uiRate[pid].time ~= now then uiRate[pid] = {time = now, count = 0} end
+    if uiRate[pid].count >= 8 then return end
+    uiRate[pid].count = uiRate[pid].count + 1
+    uiSubscribers[pid] = true
+    if data.action == "refresh" then
+        if validUIInteger(data.value) then uiSelected[pid] = data.value end
+        sendUIState(pid)
+        return
+    end
+    local allowed, owner = uiAccess(pid)
+    if not allowed then sendUIState(pid); return end
+    if data.action == "grant" or data.action == "remove" or data.action == "reset" then
+        if not owner then sendChat(pid, "Error: Only the owner can manage permissions."); return end
+    end
+    if data.action == "clear" then OnChatHandler(pid, "", "/dv locate clear"); return end
+    if data.action == "reset" then OnChatHandler(pid, "", "/dv set reset"); return end
+    if data.action == "remove" then
+        if type(data.value) == "string" and data.value:match("^[1-9]%d*$") then
+            OnChatHandler(pid, "", "/dv set remove account:" .. data.value)
+        end
+        return
+    end
+    local selected
+    for _, snapshot in pairs(uiSnapshots[pid] or {}) do
+        if snapshot.token == data.value then selected = snapshot; break end
+    end
+    local valid = selected ~= nil
+    if valid then
+        local username = MP.GetPlayers()[selected.pid]
+        local account = username and accountId(selected.pid)
+        local identity = username and (username .. ":" .. (account or "guest") .. ":" .. (playerEpoch[selected.pid] or 0))
+        valid = identity == selected.identity
+        if selected.kind == "vehicle" then
+            local current = MP.GetPlayerVehicles(selected.pid) or {}
+            valid = valid and current[selected.vid] == selected.raw
+                and (vehicleEpoch[selected.pid .. ":" .. selected.vid] or 0) == selected.epoch
+        end
+    end
+    if not valid then sendChat(pid, "The selection changed. Refresh and choose the player or vehicle again."); sendUIState(pid); return end
+    if data.action == "grant" and selected.kind == "player" then
+        OnChatHandler(pid, "", "/dv set add " .. selected.pid)
+    elseif (data.action == "delete" or data.action == "locate") and selected.kind == "vehicle" then
+        local prefix = data.action == "locate" and "/dv locate " or "/dv "
+        OnChatHandler(pid, "", prefix .. selected.pid .. " " .. selected.vid)
+    end
+end
+
+function DVUIVehicleChanged(pid, vid)
+    local key = pid .. ":" .. vid
+    vehicleEpoch[key] = (vehicleEpoch[key] or 0) + 1
+    return 0
+end
+
+function DVUIDisconnect(pid)
+    playerEpoch[pid] = (playerEpoch[pid] or 0) + 1
+    uiSubscribers[pid], uiSnapshots[pid], uiSelected[pid], uiRate[pid] = nil, nil, nil, nil
+end
+
 MP.RegisterEvent("onChatMessage", "OnChatHandler")
+MP.RegisterEvent("DVUIAction", "DVUIAction")
+MP.RegisterEvent("onPlayerDisconnect", "DVUIDisconnect")
+MP.RegisterEvent("onVehicleSpawn", "DVUIVehicleChanged")
+MP.RegisterEvent("onVehicleEdited", "DVUIVehicleChanged")
+MP.RegisterEvent("onVehicleDeleted", "DVUIVehicleChanged")
 
 print("--------------------------------------------------")
 print(" SUCCESSFULY LOADED BEAMMP DELETE VEHICLE MOD       ")
